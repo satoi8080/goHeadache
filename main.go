@@ -2,14 +2,16 @@ package main
 
 import (
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"strings"
 	"text/tabwriter"
 )
 
-// WeatherData Structs for parsing JSON data
+// WeatherData and HourlyData structs remain the same...
 type WeatherData struct {
 	PlaceName     string       `json:"place_name"`
 	PlaceID       string       `json:"place_id"`
@@ -29,7 +31,7 @@ type HourlyData struct {
 	PressureLevel string `json:"pressure_level"`
 }
 
-// translateWeatherCode - helper function to translate weather codes to descriptions
+// Helper functions remain the same...
 func translateWeatherCode(code string) string {
 	switch code {
 	case "100":
@@ -43,11 +45,9 @@ func translateWeatherCode(code string) string {
 	}
 }
 
-// displayHourlyData - helper function to format hourly data by day
 func displayHourlyData(dayName string, data []HourlyData) {
 	fmt.Printf("\n%s:\n", dayName)
 
-	// Initialize a new tabwriter for aligning the output columns
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	if _, err := fmt.Fprintln(w, "Time\tWeather\tTemp (°C)\tPressure (hPa)\tPressure Level"); err != nil {
 		fmt.Printf("Error writing header to tabwriter: %v\n", err)
@@ -63,32 +63,58 @@ func displayHourlyData(dayName string, data []HourlyData) {
 		if pressure == "#" {
 			pressure = "N/A"
 		}
-		// Translate weather code
 		weatherDesc := translateWeatherCode(entry.Weather)
-		// Print each hourly entry with Pressure Level added
 		if _, err := fmt.Fprintf(w, "%s:00\t%s\t%s\t%s\t%s\n", entry.Time, weatherDesc, temp, pressure, entry.PressureLevel); err != nil {
 			fmt.Printf("Error writing row to tabwriter: %v\n", err)
 			return
 		}
 	}
 
-	// Flush the tabwriter to ensure all data is printed
 	if err := w.Flush(); err != nil {
 		fmt.Printf("Error flushing tabwriter: %v\n", err)
 	}
 }
 
-// Main function
 func main() {
-	// Check if area code argument is provided
+	// Create a custom FlagSet
+	fs := flag.NewFlagSet("goHeadache", flag.ExitOnError)
+	dayFlag := fs.String("day", "", "Filter output by day (yesterday, today, tomorrow, dayafter)")
+
+	// Print usage if no arguments
 	if len(os.Args) < 2 {
-		fmt.Println("Usage: goHeadache <area_code>")
-		fmt.Println("Please visit https://geoshape.ex.nii.ac.jp/ka/resource/ to find the appropriate area code.")
+		fmt.Println("Usage: goHeadache [-day <day>] <area_code>")
+		fmt.Println("  or:  goHeadache <area_code> [-day <day>]")
+		fmt.Println("\nOptions:")
+		fmt.Println("  -day: yesterday, today, tomorrow, or dayafter")
+		fmt.Println("\nPlease visit https://geoshape.ex.nii.ac.jp/ka/resource/ to find the appropriate area code.")
 		return
 	}
 
-	// Get the area code from the command line arguments
-	areaCode := os.Args[1]
+	// Find area code and parse flags regardless of order
+	var areaCode string
+	var args []string
+
+	// Separate area code from flags
+	for _, arg := range os.Args[1:] {
+		if !strings.HasPrefix(arg, "-") && areaCode == "" {
+			areaCode = arg
+		} else {
+			args = append(args, arg)
+		}
+	}
+
+	// Parse remaining arguments as flags
+	if err := fs.Parse(args); err != nil {
+		fmt.Printf("Error parsing flags: %v\n", err)
+		return
+	}
+
+	// Validate we have an area code
+	if areaCode == "" {
+		fmt.Println("Error: Area code is required")
+		return
+	}
+
 	url := fmt.Sprintf("https://zutool.jp/api/getweatherstatus/%s", areaCode)
 
 	// Make a GET request
@@ -122,7 +148,6 @@ func main() {
 
 	// Extract fields by fixed position in the JSON
 	fields := []string{"place_name", "place_id", "prefectures_id", "dateTime", "yesterday", "today", "tommorow", "dayaftertomorrow"}
-	// The typo 'tommorow' is from the original API response
 
 	// Assign values by their expected positions
 	if placeName, ok := rawData[fields[0]].(string); ok {
@@ -158,14 +183,14 @@ func main() {
 		return result
 	}
 
-	// Parse each day's data by position in the JSON fields
+	// Parse each day's data
 	if yesterday, exists := rawData[fields[4]]; exists {
 		weatherData.Yesterday = parseHourlyData(yesterday)
 	}
 	if today, exists := rawData[fields[5]]; exists {
 		weatherData.Today = parseHourlyData(today)
 	}
-	if tomorrow, exists := rawData[fields[6]]; exists { // Fixed position for "tommorow" typo
+	if tomorrow, exists := rawData[fields[6]]; exists {
 		weatherData.Tomorrow = parseHourlyData(tomorrow)
 	}
 	if dayAfterTom, exists := rawData[fields[7]]; exists {
@@ -175,8 +200,24 @@ func main() {
 	// Display formatted weather data
 	fmt.Printf("Weather Report for %s\n", weatherData.PlaceName)
 	fmt.Println("--------------------------------------------")
-	displayHourlyData("Yesterday", weatherData.Yesterday)
-	displayHourlyData("Today", weatherData.Today)
-	displayHourlyData("Tomorrow", weatherData.Tomorrow)
-	displayHourlyData("Day After Tomorrow", weatherData.DayAfterTom)
+
+	// Display data based on the day flag
+	switch strings.ToLower(*dayFlag) {
+	case "yesterday":
+		displayHourlyData("Yesterday", weatherData.Yesterday)
+	case "today":
+		displayHourlyData("Today", weatherData.Today)
+	case "tomorrow":
+		displayHourlyData("Tomorrow", weatherData.Tomorrow)
+	case "dayafter":
+		displayHourlyData("Day After Tomorrow", weatherData.DayAfterTom)
+	case "":
+		// If no day specified, show all days
+		displayHourlyData("Yesterday", weatherData.Yesterday)
+		displayHourlyData("Today", weatherData.Today)
+		displayHourlyData("Tomorrow", weatherData.Tomorrow)
+		displayHourlyData("Day After Tomorrow", weatherData.DayAfterTom)
+	default:
+		fmt.Printf("Invalid day specified. Please use: yesterday, today, tomorrow, or dayafter\n")
+	}
 }

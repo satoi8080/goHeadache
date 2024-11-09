@@ -1,33 +1,70 @@
-goHeadache
+# goHeadache
 
 Command Line tool for checking Low Pressure Headache information in Japan
 
-# Environment
+## Environment
 
 Go 1.23.3
 
-# Usage
+## Installation
 
 ```bash
 cd goHeadache
 go build
-goHeadache <area_code>
 ```
 
-See area codes at https://geoshape.ex.nii.ac.jp/ka/resource/
+## Usage
 
-# Example
-
-For `Chiyoda, Tokyo`, you can run
+You can run goHeadache in two ways:
 
 ```bash
-$ goHeadache 13101
+goHeadache [-day <day>] <area_code>
+# or
+goHeadache <area_code> [-day <day>]
 ```
 
-# Credits
+### Options
 
-Weather data source:
+- `-day`: Filter output by specific day
+  - Valid values: `yesterday`, `today`, `tomorrow`, `dayafter`
+  - Optional: if omitted, shows all days
+
+### Area Codes
+
+Find your area code at: https://geoshape.ex.nii.ac.jp/ka/resource/
+
+## Examples
+
+For `Chiyoda, Tokyo` (area code: 13101):
+
+```bash
+# Show all days
+$ goHeadache 13101
+
+# Show only today's forecast
+$ goHeadache -day today 13101
+
+# Show only tomorrow's forecast
+$ goHeadache 13101 -day tomorrow
+```
+
+Sample output:
+```
+Weather Report for 千代田区
+--------------------------------------------
+
+Today:
+Time    Weather    Temp (°C)    Pressure (hPa)    Pressure Level
+9:00    Sunny      18           1012              0
+12:00   Sunny      22           1010              1
+15:00   Cloudy     21           1008              2
+...
+```
+
+## Data Source Credits
+
+Weather data provided by:
 - https://zutool.jp
 
-Area codes:
+Area codes sourced from:
 - https://geoshape.ex.nii.ac.jp/ka/resource/
