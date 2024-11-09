@@ -122,6 +122,7 @@ func main() {
 
 	// Extract fields by fixed position in the JSON
 	fields := []string{"place_name", "place_id", "prefectures_id", "dateTime", "yesterday", "today", "tommorow", "dayaftertomorrow"}
+	// The typo 'tommorow' is from the original API response
 
 	// Assign values by their expected positions
 	if placeName, ok := rawData[fields[0]].(string); ok {
