@@ -389,9 +389,9 @@ func (m model) View() string {
 	var footerText string
 	if m.dayFilter == "" {
 		// Show left/right navigation instructions when no day filter is set
-		footerText = "←/→: Change day  ↑/↓/Mouse wheel: Scroll  PgUp/PgDn: Scroll faster  Home/End: Jump to top/bottom  q: Quit"
+		footerText = "←/→: Change day ↑/↓/Mouse wheel: Scroll \n PgUp/PgDn: Scroll faster  Home/End: Jump to top/bottom  q: Quit"
 	} else {
-		footerText = "↑/↓/Mouse wheel: Scroll  PgUp/PgDn: Scroll faster  Home/End: Jump to top/bottom  q: Quit"
+		footerText = "↑/↓/Mouse wheel: Scroll PgUp/PgDn: Scroll faster \n Home/End: Jump to top/bottom  q: Quit"
 	}
 	footer := footerStyle.Render(footerText)
 
