@@ -13,13 +13,15 @@ cd goHeadache
 go build
 ```
 
+## Development Guidelines
+
+- Do not run or build after each edit. The maintainer will run/build the code themselves.
+
 ## Usage
 
 You can run goHeadache in two ways:
 
 ```bash
-goHeadache [-day <day>] <area_code>
-# or
 goHeadache <area_code> [-day <day>]
 ```
 
@@ -40,9 +42,6 @@ For `Chiyoda, Tokyo` (area code: 13101):
 ```bash
 # Show all days
 $ goHeadache 13101
-
-# Show only today's forecast
-$ goHeadache -day today 13101
 
 # Show only tomorrow's forecast
 $ goHeadache 13101 -day tomorrow
