@@ -39,15 +39,13 @@ type model struct {
 	areaCode    string
 	loading     bool
 	err         error
-	scrollPos   int // Current scroll position for content pagination
-	currentDay  int // Current day index for horizontal pagination (0=Yesterday, 1=Today, 2=Tomorrow, 3=DayAfter)
-	width       int // Terminal width
-	height      int // Terminal height
+	scrollPos   int
+	currentDay  int // 0=Yesterday, 1=Today, 2=Tomorrow, 3=DayAfterTomorrow
+	width       int
+	height      int
 }
 
 var (
-	// Main application style with a visible rounded border frame without background
-	// This ensures the border is visible while maximizing space for content
 	appStyle = lipgloss.NewStyle().
 			Padding(1, 2).
 			Border(lipgloss.RoundedBorder()).
@@ -94,7 +92,6 @@ var (
 			Align(lipgloss.Center)
 )
 
-// parseFloat converts a string to float64, returning 0 if conversion fails
 func parseFloat(s string) float64 {
 	val, err := strconv.ParseFloat(s, 64)
 	if err != nil {
@@ -125,7 +122,6 @@ const (
 	levelWidth    = 20
 )
 
-// formatHourlyData formats a single hourly data entry for display
 func formatHourlyData(entry HourlyData) (string, string, string, string) {
 	temp := entry.Temp
 	if temp == "#" {
@@ -136,29 +132,22 @@ func formatHourlyData(entry HourlyData) (string, string, string, string) {
 		pressure = "N/A"
 	}
 
-	// Format hour to two digits
 	hour := strings.TrimSpace(entry.Time)
 	if len(hour) == 1 {
 		hour = "0" + hour
 	}
 
-	// Format temperature to one decimal place if it's not N/A
 	if temp != "N/A" {
 		temp = fmt.Sprintf("%.1f", parseFloat(temp))
 	}
 
-	// Format pressure to one decimal place if it's not N/A
 	if pressure != "N/A" {
-		pressure = strings.TrimSpace(pressure)
-		pressure = fmt.Sprintf("%.1f", parseFloat(pressure))
+		pressure = fmt.Sprintf("%.1f", parseFloat(strings.TrimSpace(pressure)))
 	}
 
-	weatherDesc := translateWeatherCode(entry.Weather)
-
-	return hour + ":00", weatherDesc, temp, pressure
+	return hour + ":00", translateWeatherCode(entry.Weather), temp, pressure
 }
 
-// createTableHeaders creates the table headers for the weather data
 func createTableHeaders() string {
 	tableHeader := tableHeaderStyle.Width(timeWidth).Render("Time") +
 		tableHeaderStyle.Width(weatherWidth).Render("Weather") +
@@ -175,7 +164,6 @@ func createTableHeaders() string {
 	return tableHeader + "\n" + tableUnits
 }
 
-// calculateScrollParameters calculates the visible height and maximum scroll position
 func calculateScrollParameters(m model, numHeaders int, numContentLines int) (int, int) {
 	// Lines consumed per header:
 	//   dayHeader with MarginTop(1)+content+MarginBottom(1) = 3 lines
@@ -191,239 +179,142 @@ func calculateScrollParameters(m model, numHeaders int, numContentLines int) (in
 	//   footer with Padding(1,0) and 2 content lines         = 4 lines
 	//   Total: 12 lines
 	extraLines := 12
-	// Calculate available height for content
 	visibleHeight := m.height - headerLines - extraLines
 	if visibleHeight < 3 {
-		visibleHeight = 3 // Ensure at least some content is visible
+		visibleHeight = 3
 	}
 
-	// Calculate the maximum possible scroll position
 	maxScroll := numContentLines - visibleHeight
 	if maxScroll < 0 {
 		maxScroll = 0
-		// When content is shorter than visible height, show all content
 		visibleHeight = numContentLines
 	}
 
 	return visibleHeight, maxScroll
 }
 
-// getDayData returns the day name and data for a given day index
-// 0=Yesterday, 1=Today, 2=Tomorrow, 3=DayAfterTomorrow
+// getDayData returns the day name and data for a given day index.
 func (m model) getDayData(dayIndex int) (string, []HourlyData) {
-	var dayName string
-	var dayData []HourlyData
-
 	switch dayIndex {
 	case 0:
-		dayName = "Yesterday"
-		dayData = m.weatherData.Yesterday
+		return "Yesterday", m.weatherData.Yesterday
 	case 1:
-		dayName = "Today"
-		dayData = m.weatherData.Today
+		return "Today", m.weatherData.Today
 	case 2:
-		dayName = "Tomorrow"
-		dayData = m.weatherData.Tomorrow
+		return "Tomorrow", m.weatherData.Tomorrow
 	case 3:
-		dayName = "Day After Tomorrow"
-		dayData = m.weatherData.DayAfterTom
+		return "Day After Tomorrow", m.weatherData.DayAfterTom
 	default:
-		dayName = "Today"
-		dayData = m.weatherData.Today
+		return "Today", m.weatherData.Today
 	}
-
-	return dayName, dayData
 }
 
-// extractHeadersAndContent extracts headers and content for a day's data
 func (m model) extractHeadersAndContent(dayName string, data []HourlyData) (string, string) {
 	if len(data) == 0 {
 		return "", ""
 	}
 
-	// Create day header with place name
-	dayHeader := dayHeaderStyle.Render(fmt.Sprintf("%s - %s", m.weatherData.PlaceName, dayName))
+	headers := dayHeaderStyle.Render(fmt.Sprintf("%s - %s", m.weatherData.PlaceName, dayName)) +
+		"\n" + createTableHeaders()
 
-	// Create table headers
-	tableHeaders := createTableHeaders()
-
-	// Create the combined header
-	headers := dayHeader + "\n" + tableHeaders
-
-	// Create data rows
-	var rows []string
-	for _, entry := range data {
+	rows := make([]string, len(data))
+	for i, entry := range data {
 		hour, weather, temp, pressure := formatHourlyData(entry)
-
-		row := cellStyle.Width(timeWidth).Render(hour) +
+		rows[i] = cellStyle.Width(timeWidth).Render(hour) +
 			cellStyle.Width(weatherWidth).Render(weather) +
 			cellStyle.Width(tempWidth).Render(temp) +
 			cellStyle.Width(pressureWidth).Render(pressure) +
 			cellStyle.Width(levelWidth).Render(entry.PressureLevel)
-
-		rows = append(rows, row)
 	}
 
-	// Join rows into content
-	content := strings.Join(rows, "\n")
+	return headers, strings.Join(rows, "\n")
+}
 
-	return headers, content
+func newView(content string) tea.View {
+	v := tea.NewView(appStyle.Render(content))
+	v.AltScreen = true
+	v.MouseMode = tea.MouseModeCellMotion
+	return v
 }
 
 func (m model) View() tea.View {
-	// Handle error and loading states
 	if m.err != nil {
-		content := errorStyle.Render(fmt.Sprintf("Error: %v", m.err))
-		v := tea.NewView(appStyle.Render(content))
-		v.AltScreen = true
-		v.MouseMode = tea.MouseModeCellMotion
-		return v
+		return newView(errorStyle.Render(fmt.Sprintf("Error: %v", m.err)))
 	}
-
 	if m.loading {
-		content := loadingStyle.Render("Loading weather data...\nPlease wait")
-		v := tea.NewView(appStyle.Render(content))
-		v.AltScreen = true
-		v.MouseMode = tea.MouseModeCellMotion
-		return v
+		return newView(loadingStyle.Render("Loading weather data...\nPlease wait"))
 	}
 
-	// Process data based on day filter
 	var allHeaders []string
-	var allContent strings.Builder
+	var allContent string
 
 	switch strings.ToLower(m.dayFilter) {
-	case "yesterday":
-		headers, content := m.extractHeadersAndContent("Yesterday", m.weatherData.Yesterday)
-		allHeaders = append(allHeaders, headers)
-		allContent.WriteString(content)
-	case "today":
-		headers, content := m.extractHeadersAndContent("Today", m.weatherData.Today)
-		allHeaders = append(allHeaders, headers)
-		allContent.WriteString(content)
-	case "tomorrow":
-		headers, content := m.extractHeadersAndContent("Tomorrow", m.weatherData.Tomorrow)
-		allHeaders = append(allHeaders, headers)
-		allContent.WriteString(content)
-	case "dayafter":
-		headers, content := m.extractHeadersAndContent("Day After Tomorrow", m.weatherData.DayAfterTom)
-		allHeaders = append(allHeaders, headers)
-		allContent.WriteString(content)
-	case "":
-		// If no day specified, show only the current day based on horizontal pagination
+	case "", "yesterday", "today", "tomorrow", "dayafter":
 		dayName, dayData := m.getDayData(m.currentDay)
-
 		if headers, content := m.extractHeadersAndContent(dayName, dayData); headers != "" {
 			allHeaders = append(allHeaders, headers)
-			allContent.WriteString(content)
+			allContent = content
 		}
 	default:
-		allContent.WriteString(errorStyle.Render("Invalid day specified. Please use: yesterday, today, tomorrow, or dayafter"))
+		allContent = errorStyle.Render("Invalid day specified. Please use: yesterday, today, tomorrow, or dayafter")
 	}
 
-	// Split the content into lines for scrolling (excluding headers)
-	contentLines := strings.Split(allContent.String(), "\n")
-
-	// Calculate scroll parameters
+	contentLines := strings.Split(allContent, "\n")
 	visibleHeight, maxScroll := calculateScrollParameters(m, len(allHeaders), len(contentLines))
 
-	// Ensure scroll position stays within valid bounds
 	if m.scrollPos < 0 {
 		m.scrollPos = 0
 	} else if m.scrollPos > maxScroll {
 		m.scrollPos = maxScroll
 	}
 
-	// Determine start position for content
-	// Always apply scroll position regardless of terminal size
-	// This ensures content is compressed rather than headers being hidden
 	startPos := m.scrollPos
-
-	// Ensure we don't go out of bounds
 	if startPos >= len(contentLines) && len(contentLines) > 0 {
 		startPos = len(contentLines) - 1
 	}
-
-	// Extract only the lines that should be visible based on scroll position
 	endIdx := startPos + visibleHeight
 	if endIdx > len(contentLines) {
 		endIdx = len(contentLines)
 	}
 
-	var visibleContentLines []string
+	var visibleContent string
 	if len(contentLines) > 0 && contentLines[0] != "" {
-		visibleContentLines = contentLines[startPos:endIdx]
+		visibleContent = strings.Join(contentLines[startPos:endIdx], "\n")
 	}
 
-	// Join the visible content lines
-	visibleContent := strings.Join(visibleContentLines, "\n")
-
-	// Create scroll indicators to show users there's more content
-	var scrollIndicator string
+	var indicatorParts []string
 	if m.scrollPos > 0 && maxScroll > 0 {
-		scrollIndicator += "↑ More above"
+		indicatorParts = append(indicatorParts, "↑ More above")
 	}
-
-	// Add scroll down indicator if there's more content below
 	if m.scrollPos < maxScroll {
-		if scrollIndicator != "" {
-			scrollIndicator += " | "
-		}
-		scrollIndicator += "↓ More below"
+		indicatorParts = append(indicatorParts, "↓ More below")
 	}
 
-	// Combine headers with scrollable content
-	var finalContent strings.Builder
-
-	// Create a separate builder for content that will be added after the frame is rendered
-	var contentBuilder strings.Builder
-
-	// Add scroll indicator if needed
-	if scrollIndicator != "" {
-		contentBuilder.WriteString(scrollIndicator + "\n\n")
+	var b strings.Builder
+	if len(indicatorParts) > 0 {
+		b.WriteString(strings.Join(indicatorParts, " | ") + "\n\n")
 	}
-
-	// Add all day headers
 	for i, header := range allHeaders {
-		contentBuilder.WriteString(header + "\n")
-
-		// If this is the current day being viewed, add the scrollable content
-		if i == len(allHeaders)-1 {
-			if visibleContent != "" {
-				contentBuilder.WriteString(visibleContent)
-			}
+		b.WriteString(header + "\n")
+		if i == len(allHeaders)-1 && visibleContent != "" {
+			b.WriteString(visibleContent)
 		}
-
-		// Add spacing between days
 		if i < len(allHeaders)-1 {
-			contentBuilder.WriteString("\n\n")
+			b.WriteString("\n\n")
 		}
 	}
 
-	// Footer with navigation help for users
 	var footerText string
 	if m.dayFilter == "" {
-		// Show left/right navigation instructions when no day filter is set
 		footerText = "←/→: Change day ↑/↓/Mouse wheel: Scroll \n PgUp/PgDn: Scroll faster  Home/End: Jump to top/bottom  q: Quit"
 	} else {
 		footerText = "↑/↓/Mouse wheel: Scroll PgUp/PgDn: Scroll faster \n Home/End: Jump to top/bottom  q: Quit"
 	}
-	footer := footerStyle.Render(footerText)
+	b.WriteString("\n\n" + footerStyle.Render(footerText))
 
-	// Add the footer
-	contentBuilder.WriteString("\n\n" + footer)
-
-	// Add the content to the final output
-	finalContent.WriteString(contentBuilder.String())
-
-	// Render the frame with the content
-	v := tea.NewView(appStyle.Render(finalContent.String()))
-	v.AltScreen = true
-	v.MouseMode = tea.MouseModeCellMotion
-	return v
+	return newView(b.String())
 }
 
-// safeGetString safely extracts a string value from a map
 func safeGetString(data map[string]interface{}, key string) string {
 	if value, exists := data[key]; exists {
 		return fmt.Sprintf("%v", value)
@@ -431,7 +322,6 @@ func safeGetString(data map[string]interface{}, key string) string {
 	return ""
 }
 
-// parseHourlyData parses hourly weather data from the API response
 func parseHourlyData(data interface{}) []HourlyData {
 	var result []HourlyData
 
@@ -445,25 +335,21 @@ func parseHourlyData(data interface{}) []HourlyData {
 		if !ok {
 			continue
 		}
-
-		entry := HourlyData{
+		result = append(result, HourlyData{
 			Time:          safeGetString(hourlyMap, "time"),
 			Weather:       safeGetString(hourlyMap, "weather"),
 			Temp:          safeGetString(hourlyMap, "temp"),
 			Pressure:      safeGetString(hourlyMap, "pressure"),
 			PressureLevel: safeGetString(hourlyMap, "pressure_level"),
-		}
-		result = append(result, entry)
+		})
 	}
 
 	return result
 }
 
-// fetchWeatherData fetches weather data from the API
 func fetchWeatherData(areaCode string) (WeatherData, error) {
 	url := fmt.Sprintf("https://zutool.jp/api/getweatherstatus/%s", areaCode)
 
-	// Make a GET request
 	resp, err := http.Get(url)
 	if err != nil {
 		return WeatherData{}, fmt.Errorf("error making GET request: %v", err)
@@ -474,19 +360,16 @@ func fetchWeatherData(areaCode string) (WeatherData, error) {
 		}
 	}()
 
-	// Read the response body
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return WeatherData{}, fmt.Errorf("error reading response body: %v", err)
 	}
 
-	// Parse JSON data into a generic map
 	var rawData map[string]interface{}
 	if err := json.Unmarshal(body, &rawData); err != nil {
 		return WeatherData{}, fmt.Errorf("error parsing JSON: %v", err)
 	}
 
-	// Initialize the WeatherData struct with basic fields
 	weatherData := WeatherData{
 		PlaceName:     safeGetString(rawData, "place_name"),
 		PlaceID:       safeGetString(rawData, "place_id"),
@@ -494,23 +377,18 @@ func fetchWeatherData(areaCode string) (WeatherData, error) {
 		DateTime:      safeGetString(rawData, "dateTime"),
 	}
 
-	// Parse each day's data
 	if yesterday, exists := rawData["yesterday"]; exists {
 		weatherData.Yesterday = parseHourlyData(yesterday)
 	}
-
 	if today, exists := rawData["today"]; exists {
 		weatherData.Today = parseHourlyData(today)
 	}
-
-	// Handle both correct and misspelled versions of "tomorrow"
 	if tomorrow, exists := rawData["tomorrow"]; exists {
 		weatherData.Tomorrow = parseHourlyData(tomorrow)
 	} else if tomorrow, exists := rawData["tommorow"]; exists {
 		// Handle the misspelled version from the API
 		weatherData.Tomorrow = parseHourlyData(tomorrow)
 	}
-
 	if dayAfterTom, exists := rawData["dayaftertomorrow"]; exists {
 		weatherData.DayAfterTom = parseHourlyData(dayAfterTom)
 	}
@@ -518,43 +396,34 @@ func fetchWeatherData(areaCode string) (WeatherData, error) {
 	return weatherData, nil
 }
 
-// initialModel creates the initial model
 func initialModel(areaCode, dayFilter string) model {
-	// Set the default day index to today
 	currentDay := 1
-
-	// If dayFilter is specified, set the currentDay accordingly
-	if dayFilter != "" {
-		switch strings.ToLower(dayFilter) {
-		case "yesterday":
-			currentDay = 0
-		case "today":
-			currentDay = 1
-		case "tomorrow":
-			currentDay = 2
-		case "dayafter":
-			currentDay = 3
-		}
+	switch strings.ToLower(dayFilter) {
+	case "yesterday":
+		currentDay = 0
+	case "today":
+		currentDay = 1
+	case "tomorrow":
+		currentDay = 2
+	case "dayafter":
+		currentDay = 3
 	}
 
-	m := model{
+	return model{
 		dayFilter:  dayFilter,
 		areaCode:   areaCode,
 		loading:    true,
-		scrollPos:  0,
 		currentDay: currentDay,
 		width:      80,
 		height:     24,
 	}
-	return m
 }
 
-// Start the model with a command to fetch weather data
+// Init starts the model with a command to fetch weather data.
 func (m model) Init() tea.Cmd {
 	return fetchWeatherCmd(m.areaCode)
 }
 
-// fetchWeatherCmd creates a command to fetch weather data
 func fetchWeatherCmd(areaCode string) tea.Cmd {
 	return func() tea.Msg {
 		weatherData, err := fetchWeatherData(areaCode)
@@ -573,25 +442,26 @@ type fetchErrorMsg struct {
 	err error
 }
 
+func (m model) maxScroll() int {
+	_, dayData := m.getDayData(m.currentDay)
+	_, maxPos := calculateScrollParameters(m, 1, len(dayData))
+	return maxPos
+}
+
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		// Update the model with the new window size
 		m.width = msg.Width
 		m.height = msg.Height
 		return m, nil
 	case tea.MouseWheelMsg:
-		// Handle mouse wheel for scrolling
-		if msg.Button == tea.MouseWheelUp {
-			// Scroll up (decrease scroll position)
+		switch msg.Button {
+		case tea.MouseWheelUp:
 			if m.scrollPos > 0 {
 				m.scrollPos--
 			}
-			return m, nil
-		} else if msg.Button == tea.MouseWheelDown {
-			// Scroll down (increase scroll position)
+		case tea.MouseWheelDown:
 			m.scrollPos++
-			return m, nil
 		}
 		return m, nil
 	case tea.KeyMsg:
@@ -599,71 +469,36 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "q", "ctrl+c":
 			return m, tea.Quit
 		case "up", "k":
-			// Scroll up (decrease scroll position)
 			if m.scrollPos > 0 {
 				m.scrollPos--
 			}
-			return m, nil
 		case "down", "j":
-			// Scroll down (increase scroll position)
-
-			// Get the current day's data
-			_, dayData := m.getDayData(m.currentDay)
-
-			// Create a content lines array based on the data length
-			var contentLines []string
-			if len(dayData) > 0 {
-				contentLines = make([]string, len(dayData))
-			}
-
-			// Calculate scroll parameters
-			_, maxScroll := calculateScrollParameters(m, 1, len(contentLines))
-
-			// Only increment if we're not at the maximum
-			if m.scrollPos < maxScroll {
+			if m.scrollPos < m.maxScroll() {
 				m.scrollPos++
 			}
-			return m, nil
 		case "left", "h":
-			// Navigate to previous day
-			if m.dayFilter == "" {
-				// Only navigate between days when no specific day filter is set
-				if m.currentDay > 0 {
-					m.currentDay--
-					m.scrollPos = 0 // Reset scroll position when changing days
-				}
+			if m.dayFilter == "" && m.currentDay > 0 {
+				m.currentDay--
+				m.scrollPos = 0
 			}
-			return m, nil
 		case "right", "l":
-			// Navigate to next day
-			if m.dayFilter == "" {
-				// Only navigate between days when no specific day filter is set
-				if m.currentDay < 3 {
-					m.currentDay++
-					m.scrollPos = 0 // Reset scroll position when changing days
-				}
+			if m.dayFilter == "" && m.currentDay < 3 {
+				m.currentDay++
+				m.scrollPos = 0
 			}
-			return m, nil
 		case "home":
-			// Scroll to top
 			m.scrollPos = 0
-			return m, nil
 		case "end":
-			// Scroll to bottom - this is approximate, will be limited in View
-			m.scrollPos = 999
-			return m, nil
+			m.scrollPos = m.maxScroll()
 		case "pageup":
-			// Scroll up by 10 lines
 			m.scrollPos -= 10
 			if m.scrollPos < 0 {
 				m.scrollPos = 0
 			}
-			return m, nil
 		case "pagedown":
-			// Scroll down by 10 lines
 			m.scrollPos += 10
-			return m, nil
 		}
+		return m, nil
 	case fetchSuccessMsg:
 		m.weatherData = msg.weatherData
 		m.loading = false
@@ -677,11 +512,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func main() {
-	// Create a custom FlagSet
 	fs := flag.NewFlagSet("goHeadache", flag.ExitOnError)
 	dayFlag := fs.String("day", "", "Filter output by day (yesterday, today, tomorrow, dayafter)")
 
-	// Print usage if no arguments
 	if len(os.Args) < 2 {
 		fmt.Println("Usage:  goHeadache <area_code> [-day <day>]")
 		fmt.Println("\nOptions:")
@@ -690,11 +523,8 @@ func main() {
 		return
 	}
 
-	// Find area code and parse flags regardless of order
 	var areaCode string
 	var args []string
-
-	// Separate area code from flags
 	for _, arg := range os.Args[1:] {
 		if !strings.HasPrefix(arg, "-") && areaCode == "" {
 			areaCode = arg
@@ -703,22 +533,17 @@ func main() {
 		}
 	}
 
-	// Parse remaining arguments as flags
 	if err := fs.Parse(args); err != nil {
 		fmt.Printf("Error parsing flags: %v\n", err)
 		return
 	}
 
-	// Validate we have an area code
 	if areaCode == "" {
 		fmt.Println("Error: Area code is required")
 		return
 	}
 
-	// Initialize the model and run the program
 	p := tea.NewProgram(initialModel(areaCode, *dayFlag))
-
-	// Run the program with the fetch command
 	if _, err := p.Run(); err != nil {
 		fmt.Printf("Error running program: %v\n", err)
 		os.Exit(1)
