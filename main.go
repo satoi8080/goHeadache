@@ -9,6 +9,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -47,24 +48,24 @@ type model struct {
 
 var (
 	appStyle = lipgloss.NewStyle().
-			Padding(1, 2).
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("#003366"))
+			Padding(0, 1).
+			Border(lipgloss.DoubleBorder()).
+			BorderForeground(lipgloss.Color("#0EA5E9"))
 
 	dayHeaderStyle = lipgloss.NewStyle().
 			Bold(true).
-			Foreground(lipgloss.Color("#FFFFFF")).
-			Background(lipgloss.Color("#0A4B78")).
-			PaddingLeft(1).
-			PaddingRight(1).
+			Foreground(lipgloss.Color("#1E3A5F")).
+			Background(lipgloss.Color("#93C5FD")).
+			PaddingLeft(2).
+			PaddingRight(2).
 			MarginTop(1).
-			MarginBottom(1).
+			MarginBottom(0).
 			Align(lipgloss.Center)
 
 	tableHeaderStyle = lipgloss.NewStyle().
 				Bold(true).
-				Foreground(lipgloss.Color("#FFFFFF")).
-				Background(lipgloss.Color("#1A659E")).
+				Foreground(lipgloss.Color("#0C2A4A")).
+				Background(lipgloss.Color("#60A5FA")).
 				PaddingLeft(1).
 				PaddingRight(1).
 				Align(lipgloss.Center)
@@ -72,22 +73,36 @@ var (
 	cellStyle = lipgloss.NewStyle().
 			PaddingLeft(1).
 			PaddingRight(1).
-			Align(lipgloss.Center)
+			Align(lipgloss.Center).
+			Foreground(lipgloss.Color("#1E293B"))
 
 	errorStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#FF0000")).
+			Foreground(lipgloss.Color("#991B1B")).
 			Bold(true).
-			Padding(1)
+			Padding(1, 2).
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("#EF4444"))
 
 	loadingStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#4D94FF")).
+			Foreground(lipgloss.Color("#0369A1")).
 			Bold(true).
 			Padding(2).
 			Align(lipgloss.Center)
 
+	currentCellStyle = lipgloss.NewStyle().
+				PaddingLeft(1).
+				PaddingRight(1).
+				Align(lipgloss.Center).
+				Background(lipgloss.Color("#FEF08A")).
+				Foreground(lipgloss.Color("#1E293B")).
+				Bold(true)
+
 	footerStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#7FDBFF")).
-			Padding(1, 0).
+			Foreground(lipgloss.Color("#475569")).
+			Padding(0, 0).
+			MarginTop(1).
+			Border(lipgloss.NormalBorder(), true, false, false, false).
+			BorderForeground(lipgloss.Color("#1E3A5F")).
 			Align(lipgloss.Center)
 )
 
@@ -201,7 +216,23 @@ func (m model) getDayData(dayIndex int) (string, []HourlyData) {
 	}
 }
 
-func (m model) extractHeadersAndContent(dayName string, data []HourlyData) (string, string) {
+// findCurrentRowIndex returns the index of the latest entry whose hour <= current hour.
+func findCurrentRowIndex(data []HourlyData) int {
+	now := time.Now().Hour()
+	best := 0
+	for i, entry := range data {
+		h, err := strconv.Atoi(strings.TrimSpace(entry.Time))
+		if err != nil {
+			continue
+		}
+		if h <= now {
+			best = i
+		}
+	}
+	return best
+}
+
+func (m model) extractHeadersAndContent(dayName string, data []HourlyData, highlightRow int) (string, string) {
 	if len(data) == 0 {
 		return "", ""
 	}
@@ -215,11 +246,15 @@ func (m model) extractHeadersAndContent(dayName string, data []HourlyData) (stri
 	rows := make([]string, len(data))
 	for i, entry := range data {
 		hour, weather, temp, pressure := formatHourlyData(entry)
-		rows[i] = cellStyle.Width(colW).Render(hour) +
-			cellStyle.Width(colW).Render(weather) +
-			cellStyle.Width(colW).Render(temp) +
-			cellStyle.Width(colW).Render(pressure) +
-			cellStyle.Width(colW).Render(entry.PressureLevel)
+		s := cellStyle
+		if i == highlightRow {
+			s = currentCellStyle
+		}
+		rows[i] = s.Width(colW).Render(hour) +
+			s.Width(colW).Render(weather) +
+			s.Width(colW).Render(temp) +
+			s.Width(colW).Render(pressure) +
+			s.Width(colW).Render(entry.PressureLevel)
 	}
 
 	return headers, strings.Join(rows, "\n")
@@ -246,7 +281,11 @@ func (m model) View() tea.View {
 	switch strings.ToLower(m.dayFilter) {
 	case "", "yesterday", "today", "tomorrow", "dayafter":
 		dayName, dayData := m.getDayData(m.currentDay)
-		if headers, content := m.extractHeadersAndContent(dayName, dayData); headers != "" {
+		highlightRow := -1
+		if m.currentDay == 1 {
+			highlightRow = findCurrentRowIndex(dayData)
+		}
+		if headers, content := m.extractHeadersAndContent(dayName, dayData, highlightRow); headers != "" {
 			allHeaders = append(allHeaders, headers)
 			allContent = content
 		}
@@ -306,7 +345,7 @@ func (m model) View() tea.View {
 		footerText = "↑/↓/Mouse wheel: Scroll PgUp/PgDn: Scroll faster \n Home/End: Jump to top/bottom  q: Quit"
 	}
 	tableWidth := ((m.width - 6) / numCols) * numCols
-	b.WriteString("\n\n" + footerStyle.Width(tableWidth).Render(footerText))
+	b.WriteString("\n" + footerStyle.Width(tableWidth).Render(footerText))
 
 	return newView(b.String())
 }
@@ -498,6 +537,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case fetchSuccessMsg:
 		m.weatherData = msg.weatherData
 		m.loading = false
+		if m.currentDay == 1 {
+			m.scrollPos = findCurrentRowIndex(m.weatherData.Today)
+		}
 		return m, nil
 	case fetchErrorMsg:
 		m.err = msg.err
