@@ -59,7 +59,6 @@ var (
 			PaddingRight(1).
 			MarginTop(1).
 			MarginBottom(1).
-			Width(58).
 			Align(lipgloss.Center)
 
 	tableHeaderStyle = lipgloss.NewStyle().
@@ -113,14 +112,7 @@ func translateWeatherCode(code string) string {
 	}
 }
 
-// Column widths for table rendering
-const (
-	timeWidth     = 8
-	weatherWidth  = 10
-	tempWidth     = 10
-	pressureWidth = 15
-	levelWidth    = 20
-)
+const numCols = 5
 
 func formatHourlyData(entry HourlyData) (string, string, string, string) {
 	temp := entry.Temp
@@ -148,18 +140,18 @@ func formatHourlyData(entry HourlyData) (string, string, string, string) {
 	return hour + ":00", translateWeatherCode(entry.Weather), temp, pressure
 }
 
-func createTableHeaders() string {
-	tableHeader := tableHeaderStyle.Width(timeWidth).Render("Time") +
-		tableHeaderStyle.Width(weatherWidth).Render("Weather") +
-		tableHeaderStyle.Width(tempWidth).Render("Temp") +
-		tableHeaderStyle.Width(pressureWidth).Render("Pressure") +
-		tableHeaderStyle.Width(levelWidth).Render("Pressure Level")
+func createTableHeaders(colW int) string {
+	tableHeader := tableHeaderStyle.Width(colW).Render("Time") +
+		tableHeaderStyle.Width(colW).Render("Weather") +
+		tableHeaderStyle.Width(colW).Render("Temp") +
+		tableHeaderStyle.Width(colW).Render("Pressure") +
+		tableHeaderStyle.Width(colW).Render("Pressure Level")
 
-	tableUnits := tableHeaderStyle.Width(timeWidth).Render("") +
-		tableHeaderStyle.Width(weatherWidth).Render("") +
-		tableHeaderStyle.Width(tempWidth).Render("(°C)") +
-		tableHeaderStyle.Width(pressureWidth).Render("(hPa)") +
-		tableHeaderStyle.Width(levelWidth).Render("")
+	tableUnits := tableHeaderStyle.Width(colW).Render("") +
+		tableHeaderStyle.Width(colW).Render("") +
+		tableHeaderStyle.Width(colW).Render("(°C)") +
+		tableHeaderStyle.Width(colW).Render("(hPa)") +
+		tableHeaderStyle.Width(colW).Render("")
 
 	return tableHeader + "\n" + tableUnits
 }
@@ -214,17 +206,20 @@ func (m model) extractHeadersAndContent(dayName string, data []HourlyData) (stri
 		return "", ""
 	}
 
-	headers := dayHeaderStyle.Render(fmt.Sprintf("%s - %s", m.weatherData.PlaceName, dayName)) +
-		"\n" + createTableHeaders()
+	// appStyle has border(1 each side) + padding(2 each side) = 6 chars total horizontal overhead
+	colW := (m.width - 6) / numCols
+	tableWidth := colW * numCols
+	headers := dayHeaderStyle.Width(tableWidth).Render(fmt.Sprintf("%s - %s", m.weatherData.PlaceName, dayName)) +
+		"\n" + createTableHeaders(colW)
 
 	rows := make([]string, len(data))
 	for i, entry := range data {
 		hour, weather, temp, pressure := formatHourlyData(entry)
-		rows[i] = cellStyle.Width(timeWidth).Render(hour) +
-			cellStyle.Width(weatherWidth).Render(weather) +
-			cellStyle.Width(tempWidth).Render(temp) +
-			cellStyle.Width(pressureWidth).Render(pressure) +
-			cellStyle.Width(levelWidth).Render(entry.PressureLevel)
+		rows[i] = cellStyle.Width(colW).Render(hour) +
+			cellStyle.Width(colW).Render(weather) +
+			cellStyle.Width(colW).Render(temp) +
+			cellStyle.Width(colW).Render(pressure) +
+			cellStyle.Width(colW).Render(entry.PressureLevel)
 	}
 
 	return headers, strings.Join(rows, "\n")
@@ -310,7 +305,8 @@ func (m model) View() tea.View {
 	} else {
 		footerText = "↑/↓/Mouse wheel: Scroll PgUp/PgDn: Scroll faster \n Home/End: Jump to top/bottom  q: Quit"
 	}
-	b.WriteString("\n\n" + footerStyle.Render(footerText))
+	tableWidth := ((m.width - 6) / numCols) * numCols
+	b.WriteString("\n\n" + footerStyle.Width(tableWidth).Render(footerText))
 
 	return newView(b.String())
 }
