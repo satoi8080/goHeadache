@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -261,16 +261,22 @@ func (m model) extractHeadersAndContent(dayName string, data []HourlyData) (stri
 	return headers, content
 }
 
-func (m model) View() string {
+func (m model) View() tea.View {
 	// Handle error and loading states
 	if m.err != nil {
 		content := errorStyle.Render(fmt.Sprintf("Error: %v", m.err))
-		return appStyle.Render(content)
+		v := tea.NewView(appStyle.Render(content))
+		v.AltScreen = true
+		v.MouseMode = tea.MouseModeCellMotion
+		return v
 	}
 
 	if m.loading {
 		content := loadingStyle.Render("Loading weather data...\nPlease wait")
-		return appStyle.Render(content)
+		v := tea.NewView(appStyle.Render(content))
+		v.AltScreen = true
+		v.MouseMode = tea.MouseModeCellMotion
+		return v
 	}
 
 	// Process data based on day filter
@@ -402,7 +408,10 @@ func (m model) View() string {
 	finalContent.WriteString(contentBuilder.String())
 
 	// Render the frame with the content
-	return appStyle.Render(finalContent.String())
+	v := tea.NewView(appStyle.Render(finalContent.String()))
+	v.AltScreen = true
+	v.MouseMode = tea.MouseModeCellMotion
+	return v
 }
 
 // safeGetString safely extracts a string value from a map
@@ -562,15 +571,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		return m, nil
-	case tea.MouseMsg:
+	case tea.MouseWheelMsg:
 		// Handle mouse wheel for scrolling
-		if msg.Button == tea.MouseButtonWheelUp {
+		if msg.Button == tea.MouseWheelUp {
 			// Scroll up (decrease scroll position)
 			if m.scrollPos > 0 {
 				m.scrollPos--
 			}
 			return m, nil
-		} else if msg.Button == tea.MouseButtonWheelDown {
+		} else if msg.Button == tea.MouseWheelDown {
 			// Scroll down (increase scroll position)
 			m.scrollPos++
 			return m, nil
@@ -697,12 +706,8 @@ func main() {
 		return
 	}
 
-	// Initialize the model and run the program with full-screen mode
-	p := tea.NewProgram(
-		initialModel(areaCode, *dayFlag),
-		tea.WithAltScreen(),       // Use alternate screen buffer
-		tea.WithMouseCellMotion(), // Enable mouse support
-	)
+	// Initialize the model and run the program
+	p := tea.NewProgram(initialModel(areaCode, *dayFlag))
 
 	// Run the program with the fetch command
 	if _, err := p.Run(); err != nil {
