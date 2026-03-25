@@ -177,11 +177,20 @@ func createTableHeaders() string {
 
 // calculateScrollParameters calculates the visible height and maximum scroll position
 func calculateScrollParameters(m model, numHeaders int, numContentLines int) (int, int) {
-	// Define how many lines can be displayed at once (excluding headers)
-	// Use the actual terminal height from the model
-	headerLines := numHeaders * 3 // 3 lines per day header
-	// Account for app padding (2 lines), scroll indicator spacing (2 lines), and footer (3 lines)
-	extraLines := 7
+	// Lines consumed per header:
+	//   dayHeader with MarginTop(1)+content+MarginBottom(1) = 3 lines
+	//   "\n" separator between dayHeader and tableHeaders    = 1 line
+	//   table header row + table units row                   = 2 lines
+	//   trailing "\n" written to contentBuilder              = 1 line
+	//   Total: 7 lines per header
+	headerLines := numHeaders * 7
+	// Fixed overhead lines (not headers or content):
+	//   appStyle border (top+bottom) + padding (top+bottom)  = 4 lines
+	//   scroll indicator text + blank line                   = 2 lines
+	//   "\n\n" before footer                                 = 2 lines
+	//   footer with Padding(1,0) and 2 content lines         = 4 lines
+	//   Total: 12 lines
+	extraLines := 12
 	// Calculate available height for content
 	visibleHeight := m.height - headerLines - extraLines
 	if visibleHeight < 3 {
